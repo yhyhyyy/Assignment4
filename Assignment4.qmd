@@ -1,0 +1,176 @@
+---
+title: "Assignment4"
+author: "Haoyu Yu"
+format: html
+editor: visual
+embed-resources: true
+---
+## HPC
+
+### Make things run faster
+Rewrite the following R functions to make them faster. It is OK (and recommended) to take a look at StackOverflow and Google
+
+```{r}
+fun1 <- function(mat) {
+  n <- nrow(mat)
+  ans <- double(n) 
+  for (i in 1:n) {
+    ans[i] <- sum(mat[i, ])
+  }
+  ans
+}
+
+fun1alt <- function(mat) {
+  rowSums(mat)
+}
+
+# Cumulative sum by row
+fun2 <- function(mat) {
+  n <- nrow(mat)
+  k <- ncol(mat)
+  ans <- mat
+  for (i in 1:n) {
+    for (j in 2:k) {
+      ans[i,j] <- mat[i, j] + ans[i, j - 1]
+    }
+  }
+  ans
+}
+
+fun2alt <- function(mat) {
+  t(apply(mat, 1, cumsum))
+}
+```
+
+### Question 1
+Using the dataset generated below (`dat`), check that the output of both of your new functions matches the output of the original functions. Then use `microbenchmark` to check that your version is actually faster.
+
+```{r, warning=FALSE}
+# Use the data with this code
+set.seed(2315)
+dat <- matrix(rnorm(200 * 100), nrow = 200)
+
+# Test for the first
+microbenchmark::microbenchmark(
+  fun1(dat),
+  fun1alt(dat), unit = "relative"
+)
+
+# Test for the second
+microbenchmark::microbenchmark(
+  fun2(dat),
+  fun2alt(dat), unit = "relative"
+)
+```
+
+
+### Make things run faster with parallel computing
+
+The following function allows simulating pi:
+
+```{r}
+sim_pi <- function(n = 1000, i = NULL) {
+  p <- matrix(runif(n*2), ncol = 2)
+  mean(rowSums(p^2) < 1) * 4
+}
+
+# Here is an example of the run
+set.seed(156)
+sim_pi(1000) # 3.132
+```
+
+In order to get accurate estimates, we can run this function multiple times, with the following code:
+
+```{r}
+# This runs the simulation a 4,000 times, each with 10,000 points
+set.seed(1231)
+system.time({
+  ans <- unlist(lapply(1:4000, sim_pi, n = 10000))
+  print(mean(ans))
+})
+```
+
+### Question 2
+Rewrite the previous code using `parLapply()` (or your parallelization method of choice) to parallelize it. Run the code once, using `system.time()`, to show that your version is faster.
+
+```{r}
+library(parallel)
+sim_pi <- function(i, n) {
+  x <- runif(n)
+  y <- runif(n)
+  pi_estimate <- mean((x^2 + y^2) <= 1) * 4
+  return(pi_estimate)}
+set.seed(1231)
+
+system.time({
+  ans <- unlist(mclapply(1:4000, sim_pi, n = 10000, mc.cores = 4))
+  print(mean(ans))})
+
+```
+
+## SQL
+
+Setup a temporary database by running the following chunk
+
+```{r}
+# install.packages(c("RSQLite", "DBI"))
+
+library(RSQLite)
+library(DBI)
+
+# Initialize a temporary in memory database
+con <- dbConnect(SQLite(), ":memory:")
+
+# Download tables
+film <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film.csv")
+film_category <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film_category.csv")
+category <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/category.csv")
+
+# Copy data.frames to database
+dbWriteTable(con, "film", film)
+dbWriteTable(con, "film_category", film_category)
+dbWriteTable(con, "category", category)
+```
+
+When you write a new chunk, remember to replace the `r` with `sql, connection=con`. Some of these questions will require you to use an inner join. Read more about them here https://www.w3schools.com/sql/sql_join_inner.asp
+
+## Question 3
+
+How many many movies are available in each `rating` category?
+```{sql, connection = con}
+SELECT rating, COUNT(*) AS num_movies
+FROM film
+GROUP BY rating;
+```
+## Question 4
+
+What is the average replacement cost and rental rate for each `rating` category?
+```{sql, connection = con}
+SELECT rating,
+      AVG(replacement_cost) AS avg_replacement_cost,
+      AVG(rental_rate) AS avg_rental_rate
+FROM film
+GROUP BY rating;
+```
+## Question 5
+
+Use table `film_category` together with `film` to find how many films there are with each category ID.
+```{sql, connection = con}
+SELECT film_category.category_id, COUNT(*) AS num_films
+FROM film_category
+JOIN film ON film_category.film_id = film.film_id
+GROUP BY film_category.category_id;
+```
+## Question 6
+
+Incorporate the `category` table into the answer to the previous question to find the name of the most popular category.
+```{sql, connection = con}
+SELECT category.name, COUNT(*) AS num_films
+FROM film_category
+JOIN film ON film_category.film_id = film.film_id
+JOIN category ON film_category.category_id = category.category_id
+GROUP BY category.name
+ORDER BY num_films DESC
+LIMIT 1;
+```
+The most popular category is Sports
